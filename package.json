@@ -1,0 +1,82 @@
+{
+  "name": "@flemist/group-similar-images",
+  "version": "0.0.0",
+  "description": "Group similar images",
+  "main": "dist/lib/index.cjs",
+  "module": "dist/lib/index.mjs",
+  "types": "dist/lib/index.d.ts",
+  "engines": {
+    "node": ">=10.4.0",
+    "pnpm": "^7.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NikolayMakhonin/group-similar-images.git"
+  },
+  "keywords": [
+
+  ],
+  "author": {
+    "name": "Nikolay Makhonin",
+    "url": "https://github.com/NikolayMakhonin/"
+  },
+  "license": "Unlimited Free",
+  "bugs": {
+    "url": "https://github.com/NikolayMakhonin/group-similar-images/issues"
+  },
+  "homepage": "https://github.com/NikolayMakhonin/group-similar-images",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepublishOnly": "echo DONT PUBLISH IT !!!&&exit 1",
+    "audit": "pnpm audit --prod",
+    "lint": "eslint ./**/*.{js,cjs,mjs,ts,tsx}",
+    "lint:fix": "eslint --fix ./**/*.{js,cjs,mjs,ts,tsx}",
+    "lint:wizard": "eslint-nibble --cache --multi ./**/*.{js,cjs,mjs,ts,tsx}",
+    "build:js": "rimraf dist/lib && cpy \"**/assets/**\" \"**/*.{js,cjs,mjs}\" \"../dist/lib/\" --parents --cwd=src && rollup -c",
+    "build": "rimraf dist && pnpm run build:js",
+    "coverage:merge": "rimraf tmp/coverage/{all,merge} && cp-flat \"tmp/coverage/*/json/**/*.json\" \"tmp/coverage/merge\" && nyc report -r lcov --report-dir tmp/coverage/all/lcov --temp-dir \"tmp/coverage/merge/\"",
+    "coverage:check": "pnpm run coverage:merge && nyc check-coverage --report-dir tmp/coverage/all/lcov --lines 50 --functions 50 --branches 50 --statements 50",
+    "test:mocha": "mocha ./src/**/*.test.*",
+    "test:mocha:coverage": "rimraf tmp/coverage/mocha && nyc --all mocha ./src/**/*.test.*",
+    "test:mocha:watch": "mocha --watch ./src/**/*.test.*",
+    "test:mocha:ci": "rimraf tmp/coverage/mocha && nyc --all mocha ./{src,dist/lib}/**/*.test.*",
+    "test:all": "pnpm run audit && pnpm run lint && pnpm run build && pnpm run test:mocha:ci",
+    "coveralls": "pnpm run coverage:check && nyc report --reporter=text-lcov --temp-dir \"tmp/coverage/merge/\" | coveralls"
+  },
+  "devDependencies": {
+    "@flemist/copy-glob-flat": "0.0.5",
+    "@flemist/test-utils": "0.0.9",
+    "@flemist/test-variants": "0.0.16",
+    "@rollup/plugin-alias": "3.1.9",
+    "@rollup/plugin-commonjs": "=21.1.0",
+    "@rollup/plugin-json": "4.1.0",
+    "@rollup/plugin-node-resolve": "13.3.0",
+    "@rollup/plugin-replace": "4.0.0",
+    "@rollup/plugin-typescript": "8.3.3",
+    "@rollup/pluginutils": "4.2.1",
+    "@types/assert": "1.5.6",
+    "@types/mocha": "9.1.1",
+    "@types/node": "18.0.0",
+    "@zerollup/ts-transform-paths": "1.7.18",
+    "cpy-cli": "=3.1.1",
+    "eslint": "8.18.0",
+    "eslint-config-pro": "3.0.16",
+    "globby": "=11.1.0",
+    "mocha": "9.2.2",
+    "nyc": "15.1.0",
+    "rdtsc": "3.0.3",
+    "rimraf": "3.0.2",
+    "rollup": "2.75.7",
+    "rollup-plugin-multi-input": "1.3.1",
+    "rollup-plugin-svelte": "7.1.0",
+    "svelte": "3.50.1",
+    "ts-node": "=10.8.0",
+    "tsconfig-paths": "4.0.0",
+    "typescript": "^4.7.4"
+  },
+  "dependencies": {
+    "tslib": "^2.4.0"
+  }
+}

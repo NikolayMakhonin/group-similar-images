@@ -1,0 +1,14 @@
+# project template
+/dist/**/test/**
+/dist/**/*.test.*
+/dist/**/*.stress.*
+/tmp/
+/node_modules/
+
+# temp and trash
+.DS_Store
+/*.log
+/.eslintcache
+/package-lock.json
+/yarn.lock
+

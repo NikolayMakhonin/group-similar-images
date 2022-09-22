@@ -1,0 +1,9 @@
+# project template
+/dist/
+/.idea/
+/.github/
+/docs/
+/tmp/
+/node_modules/
+
+# additional
