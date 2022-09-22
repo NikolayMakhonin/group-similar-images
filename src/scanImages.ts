@@ -1,8 +1,11 @@
 import globby from 'globby'
 import {Pool, PoolRunner} from '@flemist/time-limits'
-import sharp from 'sharp'
-import {Image, ImageFileGroupItem, ImageFileStat} from 'src/contracts'
+// import sharp from 'sharp'
+import phash from 'sharp-phash'
+import phashDiff from 'sharp-phash/distance'
+import {ImageFileGroupItem, ImageFile} from 'src/contracts'
 
+/*
 const COLOR_COUNT_PER_CHANNEL = 32
 
 function calcColorIndex(R: number, G: number, B: number, colorStep: number) {
@@ -81,28 +84,28 @@ function calcColorStatsDiff(stat1: Float32Array, stat2: Float32Array): number {
 
   return sumSqr / len
 }
+*/
 
 function groupImages({
-  imageFileStats,
+  imageFiles,
   maxDiff,
 }: {
-  imageFileStats: ImageFileStat[],
+  imageFiles: ImageFile[],
   maxDiff: number,
 }): ImageFileGroupItem[][] {
-  imageFileStats = imageFileStats.slice()
-  const len = imageFileStats.length
+  imageFiles = imageFiles.slice()
   const groupRemaining = []
   const groups: ImageFileGroupItem[][] = []
 
-  for (let i = 0; i < imageFileStats.length; i++) {
-    const imageFileStat1 = imageFileStats[i]
+  for (let i = 0; i < imageFiles.length; i++) {
+    const imageFileStat1 = imageFiles[i]
     let group: ImageFileGroupItem[]
     let minDiff = 1
-    for (let j = i + 1; j < imageFileStats.length; j++) {
-      const imageFileStat2 = imageFileStats[j]
-      const diff = calcColorStatsDiff(
-        imageFileStat1.colorStat,
-        imageFileStat2.colorStat,
+    for (let j = i + 1; j < imageFiles.length; j++) {
+      const imageFileStat2 = imageFiles[j]
+      const diff = phashDiff(
+        imageFileStat1.hash,
+        imageFileStat2.hash,
       )
       if (diff < minDiff) {
         minDiff = diff
@@ -118,8 +121,8 @@ function groupImages({
           file: imageFileStat2.file,
           diff,
         })
-        imageFileStats[j] = imageFileStats[imageFileStats.length - 1]
-        imageFileStats.length--
+        imageFiles[j] = imageFiles[imageFiles.length - 1]
+        imageFiles.length--
         j--
       }
     }
@@ -154,28 +157,17 @@ export async function scanImages({
 
   const poolRunner = new PoolRunner(new Pool(6))
 
-  const imageFileStats = await Promise.all(files.map(async (file) => {
+  const imageFiles = await Promise.all(files.map(async (file) => {
     try {
-      const imageFileStat = await poolRunner.run<ImageFileStat>(1, async () => {
-        const _sharp = sharp(file)
-        const metadata = await _sharp.metadata()
-        const buffer = await _sharp.raw().toBuffer()
-        const image: Image = {
-          data    : buffer,
-          channels: metadata.channels,
-          width   : metadata.width,
-          height  : metadata.height,
-        }
-
-        const colorStat = calcColorStat(image)
-
+      const imageFile = await poolRunner.run<ImageFile>(1, async () => {
+        const hash = await phash(file)
         return {
           file,
-          colorStat,
+          hash,
         }
       })
 
-      return imageFileStat
+      return imageFile
     }
     catch (err) {
       console.error(file + ': ' + err.message)
@@ -183,8 +175,8 @@ export async function scanImages({
   }))
 
   const groups = groupImages({
-    imageFileStats,
-    maxDiff: 1.35e-7,
+    imageFiles,
+    maxDiff: 100,
   })
 
   console.log(groups)

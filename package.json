@@ -78,6 +78,7 @@
   },
   "dependencies": {
     "sharp": "^0.31.0",
+    "sharp-phash": "^2.0.0",
     "tslib": "^2.4.0"
   }
 }

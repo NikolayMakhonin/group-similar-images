@@ -5,9 +5,9 @@ export type Image = {
   channels: number
 }
 
-export type ImageFileStat = {
+export type ImageFile = {
   file: string,
-  colorStat: Float32Array,
+  hash: string,
 }
 
 export type ImageFileGroupItem = {
