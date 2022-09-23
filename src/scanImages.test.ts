@@ -6,9 +6,12 @@ describe('scanImages', async function () {
   it('base', async function () {
     await scanImages({
       filePatterns: [
-        // 'E:/RemoteData/Mega2/Pictures/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
+        // 'E:/RemoteData/Mega2/Pictures/ОзВ/__SEND/Old/**/*',
+        // 'E:/RemoteData/Mega2/Pictures/ОзВ/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
+        // '!E:/RemoteData/Mega2/Pictures/__SEND/**/*',
         'E:/Temp/Images/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
       ],
+      destDir: 'E:/Temp/ImageGroups',
     })
   })
 })

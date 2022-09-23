@@ -5,9 +5,16 @@ export type Image = {
   channels: number
 }
 
+export type Color = [R: number, G: number, B: number]
+
+export type ColorStat = {
+  color: Color,
+  value: number,
+}
+
 export type ImageFileStat = {
   file: string,
-  colorStat: Float32Array,
+  colorStats: ColorStat[],
 }
 
 export type ImageFileGroupItem = {
