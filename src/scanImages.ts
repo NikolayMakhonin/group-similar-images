@@ -24,24 +24,13 @@ function getColorSimilarity(color1: Color, color2: Color) {
 
 function calcColorStats({
   data,
-  channels,
   width,
   height,
 }: Image): ColorStat[] {
-  if (channels !== 1 && channels !== 3 && channels !== 4) {
-    throw new Error(`channels = ${channels}`)
-  }
-
-  const stepColor = 256 / (COLOR_COUNT_PER_CHANNEL - 1)
   const colorStat = new Map<number, ColorStat>()
   const pixelCount = width * height
 
-  function getRGB(data: Uint8Array, channels: number, index: number): Color {
-    const R = data[index]
-    const G = channels > 1 ? data[index + 1] : R
-    const B = channels > 2 ? data[index + 2] : R
-    return [R, G, B]
-  }
+  const pixelData = new Uint32Array(data.buffer)
 
   function addColorStat(color: Color) {
     const [R, G, B] = color
@@ -53,9 +42,9 @@ function calcColorStats({
     const modG = (G % stepColor) / stepColor
     const modB = (B % stepColor) / stepColor
 
-    // const colorIndex = divR
-    //   + COLOR_COUNT_PER_CHANNEL * divG
-    //   + (COLOR_COUNT_PER_CHANNEL ** 2) * divB
+    const colorIndex = divR
+      + COLOR_COUNT_PER_CHANNEL * divG
+      + (COLOR_COUNT_PER_CHANNEL ** 2) * divB
     //
     // const item = colorStat.get(colorIndex)
     // if (!item) {
@@ -96,8 +85,17 @@ function calcColorStats({
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
       const index = y * width + x
-      const color = getRGB(data, channels, index)
-      addColorStat(color)
+      const pixel = pixelData[index]
+      const item = colorStat.get(pixel)
+      if (!item) {
+        colorStat.set(pixel, {
+          color: new Uint8Array,
+          value,
+        })
+      }
+      else {
+        item.value += value
+      }
     }
   }
 
