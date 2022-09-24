@@ -4,11 +4,11 @@ import sharp from 'sharp'
 import {Color, ColorStat, Image, ImageFileGroupItem, ImageFileStat} from 'src/contracts'
 import fse from 'fs/promises'
 import path from 'path'
+import * as quantizer from 'image-q'
 
-const REDUCE_IMAGE_SQUARE = 32 * 32
+const IMAGE_SQUARE = 32 * 32
 const COLOR_COUNT_PER_CHANNEL = 16
-const COUNT_PER_DIMENSION = 2
-const MAX_DIFF = 3e-12
+const MAX_DIFF = 0.0000015
 
 const colorDiffMax = getColorDiff([0, 0, 0], [255, 255, 255])
 function getColorDiff(color1: Color, color2: Color) {
@@ -33,9 +33,6 @@ function calcColorStats({
   }
 
   const stepColor = 256 / (COLOR_COUNT_PER_CHANNEL - 1)
-  const stepX = width / (COUNT_PER_DIMENSION - 1)
-  const stepY = height / (COUNT_PER_DIMENSION - 1)
-  const colorCount = (COLOR_COUNT_PER_CHANNEL ** 3) * (COUNT_PER_DIMENSION ** 2)
   const colorStat = new Map<number, ColorStat>()
   const pixelCount = width * height
 
@@ -46,34 +43,30 @@ function calcColorStats({
     return [R, G, B]
   }
 
-  function getColorSimilarityByCoord(color0: Color, x: number, y: number) {
-    return getColorSimilarity(
-      color0,
-      getRGB(data, channels, y * width + x),
-    )
-  }
-
-  function addColorStat(color: Color, X: number, Y: number) {
+  function addColorStat(color: Color) {
     const [R, G, B] = color
 
     const divR = Math.floor(R / stepColor)
     const divG = Math.floor(G / stepColor)
     const divB = Math.floor(B / stepColor)
+    const modR = (R % stepColor) / stepColor
+    const modG = (G % stepColor) / stepColor
+    const modB = (B % stepColor) / stepColor
 
-    const colorIndex = divR
-      + COLOR_COUNT_PER_CHANNEL * divG
-      + (COLOR_COUNT_PER_CHANNEL ** 2) * divB
-
-    const item = colorStat.get(colorIndex)
-    if (!item) {
-      colorStat.set(colorIndex, {
-        color,
-        value: 1,
-      })
-    }
-    else {
-      item.value++
-    }
+    // const colorIndex = divR
+    //   + COLOR_COUNT_PER_CHANNEL * divG
+    //   + (COLOR_COUNT_PER_CHANNEL ** 2) * divB
+    //
+    // const item = colorStat.get(colorIndex)
+    // if (!item) {
+    //   colorStat.set(colorIndex, {
+    //     color: [divR * stepColor, divG * stepColor, divB * stepColor],
+    //     value: 1,
+    //   })
+    // }
+    // else {
+    //   item.value++
+    // }
 
     for (let r = 0; r < 2; r++) {
       const coefR = r === 0 ? 1 - modR : modR
@@ -81,28 +74,20 @@ function calcColorStats({
         const coefG = g === 0 ? 1 - modG : modG
         for (let b = 0; b < 2; b++) {
           const coefB = b === 0 ? 1 - modB : modB
-          // for (let x = 0; x < 2; x++) {
-          //   const coefX = x === 0 ? 1 - modX : modX
-          //   for (let y = 0; y < 2; y++) {
-          //     const coefY = y === 0 ? 1 - modY : modY
-              const colorIndex = (divR + r)
-                + COLOR_COUNT_PER_CHANNEL * (divG + g)
-                + (COLOR_COUNT_PER_CHANNEL ** 2) * (divB + b)
-                // + (COLOR_COUNT_PER_CHANNEL ** 2) * (COUNT_PER_DIMENSION) * (divX + x)
-                // + (COLOR_COUNT_PER_CHANNEL ** 2) * (COUNT_PER_DIMENSION ** 2) * (divY + y)
-              const value = coefR * coefG * coefB // * coefX * coefY
-              const item = colorStat.get(colorIndex)
-              if (!item) {
-                colorStat.set(colorIndex, {
-                  color,
-                  value,
-                })
-              }
-              else {
-                item.value += value
-              }
-          //   }
-          // }
+          const colorIndex = (divR + r)
+            + COLOR_COUNT_PER_CHANNEL * (divG + g)
+            + (COLOR_COUNT_PER_CHANNEL ** 2) * (divB + b)
+          const value = coefR * coefG * coefB // * coefX * coefY
+          const item = colorStat.get(colorIndex)
+          if (!item) {
+            colorStat.set(colorIndex, {
+              color: [(divR + r) * stepColor, (divG + g) * stepColor, (divB + b) * stepColor],
+              value,
+            })
+          }
+          else {
+            item.value += value
+          }
         }
       }
     }
@@ -112,30 +97,14 @@ function calcColorStats({
     for (let y = 0; y < height; y++) {
       const index = y * width + x
       const color = getRGB(data, channels, index)
-
-      // let sumDiff = 0
-      // if (x < width - 1) {
-      //   sumDiff += getColorSimilarityByCoord(color, x + 1, y)
-      //   if (y < height - 1) {
-      //     sumDiff += getColorSimilarityByCoord(color, x + 1, y + 1)
-      //   }
-      // }
-      // if (y < height - 1) {
-      //   sumDiff += getColorSimilarityByCoord(color, x, y + 1)
-      //   if (x > 0) {
-      //     sumDiff += getColorSimilarityByCoord(color, x - 1, y + 1)
-      //   }
-      // }
-      // const weight = sumDiff / 4
-
-      addColorStat(color, x, y)
+      addColorStat(color)
     }
   }
 
   const colorStatArr = Array.from(colorStat.values())
   colorStatArr.length = Math.min(colorStatArr.length, 128)
 
-  const coef = 1 / pixelCount
+  const coef = IMAGE_SQUARE / pixelCount
   for (let i = 0, len = colorStatArr.length; i < len; i++) {
     colorStatArr[i].value *= coef
   }
@@ -152,7 +121,7 @@ function calcColorStatsDiff(stat1: ColorStat[], stat2: ColorStat[]): number {
   for (let i1 = 0; i1 < len1; i1++) {
     const {color: color1, value: value1} = stat1[i1]
     for (let i2 = i1; i2 < len2; i2++) {
-      const {color: color2, value: value2} = stat2[i1]
+      const {color: color2, value: value2} = stat2[i2]
       sum = getColorSimilarity(color1, color2) * value1 * value2
       count++
     }
@@ -169,7 +138,7 @@ function groupImages({
   maxDiff: number,
 }): ImageFileGroupItem[][] {
   imageFileStats = imageFileStats.slice()
-  const groupRemaining = []
+  const groupRemaining: ImageFileGroupItem[] = []
   const groups: ImageFileGroupItem[][] = []
 
   for (let i = 0; i < imageFileStats.length; i++) {
@@ -188,13 +157,15 @@ function groupImages({
       if (diff <= maxDiff) {
         if (group == null) {
           group = [{
-            file: imageFileStat1.file,
-            diff: 0,
+            file : imageFileStat1.file,
+            diff : 0,
+            image: imageFileStat1.image,
           }]
         }
         group.push({
-          file: imageFileStat2.file,
+          file : imageFileStat2.file,
           diff,
+          image: imageFileStat2.image,
         })
         imageFileStats[j] = imageFileStats[imageFileStats.length - 1]
         imageFileStats.length--
@@ -203,8 +174,9 @@ function groupImages({
     }
     if (group == null) {
       groupRemaining.push({
-        file: imageFileStat1.file,
-        diff: minDiff,
+        file : imageFileStat1.file,
+        diff : minDiff,
+        image: imageFileStat1.image,
       })
     }
     else {
@@ -247,18 +219,46 @@ export async function scanImages({
         }
 
         const aspectRatio = metadata.width / metadata.height
-        const h = Math.sqrt(REDUCE_IMAGE_SQUARE / aspectRatio)
+        const h = Math.sqrt(IMAGE_SQUARE / aspectRatio)
         const width = Math.round(h * aspectRatio)
         const height = Math.round(h)
 
-        const buffer = await _sharp
-          .resize(width, height)
+        let data: Uint8Array = await _sharp
+          .resize(width, height, {
+            kernel: 'lanczos3',
+          })
+          .toColorspace('srgb')
+          .ensureAlpha()
+          // docs: https://sharp.pixelplumbing.com/api-output#png
+          // .png({
+          //   palette         : true,
+          //   // quality         : null,
+          //   colours         : 8,
+          //   colors          : 8,
+          //   dither          : 0,
+          //   effort          : 7, // 1 - fastest, 10 - slowest
+          //   compressionLevel: 0,
+          // })
           .raw()
           .toBuffer()
 
+        const inPointContainer = quantizer.utils.PointContainer.fromImageData({
+          data      : new Uint8ClampedArray(data.buffer),
+          width,
+          height,
+          colorSpace: 'srgb',
+        })
+        const palette = await quantizer.buildPalette([inPointContainer], {
+          colorDistanceFormula: 'euclidean',
+          paletteQuantization : 'neuquant',
+          colors              : 32,
+        })
+        const outPointContainer = await quantizer.applyPalette(inPointContainer, palette)
+        data = outPointContainer.toUint8Array()
+
         const image: Image = {
-          data    : buffer,
-          channels: metadata.channels,
+          data,
+          channels: 4,
           width,
           height,
         }
@@ -274,6 +274,7 @@ export async function scanImages({
         return {
           file,
           colorStats,
+          image,
         }
       })
 
@@ -307,7 +308,7 @@ export async function scanImages({
 
     const files = new Set<string>()
 
-    return Promise.all(group.map(async ({file}) => {
+    return Promise.all(group.map(async ({file, image}) => {
       await poolRunner.run(1, async () => {
         const { name, ext } = path.parse(path.basename(file))
         let destFile = path.resolve(dir, name + ext)
@@ -319,7 +320,24 @@ export async function scanImages({
         }
         files.add(destFile)
 
-        await fse.copyFile(file, destFile)
+        // await fse.copyFile(file, destFile)
+        await sharp(image.data, {
+          raw: {
+            channels: image.channels as any,
+            width   : image.width,
+            height  : image.height,
+          },
+        })
+          // docs: https://sharp.pixelplumbing.com/api-output#png
+          .png({
+            // palette         : false,
+            // colours         : 128,
+            // // colors          : 8,
+            // dither          : 0,
+            // effort          : 7, // 1 - fastest, 10 - slowest
+            compressionLevel: 9,
+          })
+          .toFile(destFile.replace(/(\.\w+)?$/, '') + '.png')
       })
     }))
   }))

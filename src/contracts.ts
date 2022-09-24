@@ -15,9 +15,11 @@ export type ColorStat = {
 export type ImageFileStat = {
   file: string,
   colorStats: ColorStat[],
+  image?: Image,
 }
 
 export type ImageFileGroupItem = {
   file: string,
   diff: number,
+  image: Image,
 }

@@ -9,7 +9,7 @@ describe('scanImages', async function () {
         // 'E:/RemoteData/Mega2/Pictures/ОзВ/__SEND/Old/**/*',
         // 'E:/RemoteData/Mega2/Pictures/ОзВ/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
         // '!E:/RemoteData/Mega2/Pictures/__SEND/**/*',
-        'E:/Temp/Images/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
+        'E:/Temp/Images/process/**/*.{jpg,bmp,png,gif,jpg,jpeg}',
       ],
       destDir: 'E:/Temp/ImageGroups',
     })
