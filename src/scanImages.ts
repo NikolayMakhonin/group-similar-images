@@ -8,7 +8,7 @@ import * as quantizer from 'image-q'
 
 const IMAGE_SQUARE = 32 * 32
 const COLOR_COUNT_PER_CHANNEL = 16
-const MAX_DIFF = 0.0000015
+const MAX_DIFF = 0.00007
 
 const colorDiffMax = getColorDiff([0, 0, 0], [255, 255, 255])
 function getColorDiff(color1: Color, color2: Color) {
@@ -37,9 +37,9 @@ function calcColorStats({
   const pixelCount = width * height
 
   function getRGB(data: Uint8Array, channels: number, index: number): Color {
-    const R = data[index]
-    const G = channels > 1 ? data[index + 1] : R
-    const B = channels > 2 ? data[index + 2] : R
+    const R = data[index * channels]
+    const G = channels > 1 ? data[index * channels + 1] : R
+    const B = channels > 2 ? data[index * channels + 2] : R
     return [R, G, B]
   }
 
@@ -113,7 +113,7 @@ function calcColorStats({
 }
 
 function calcColorStatsDiff(stat1: ColorStat[], stat2: ColorStat[]): number {
-  let sum: number = 0
+  let sumSqr: number = 0
   let count: number = 0
 
   const len1 = stat1.length
@@ -122,12 +122,13 @@ function calcColorStatsDiff(stat1: ColorStat[], stat2: ColorStat[]): number {
     const {color: color1, value: value1} = stat1[i1]
     for (let i2 = i1; i2 < len2; i2++) {
       const {color: color2, value: value2} = stat2[i2]
-      sum = getColorSimilarity(color1, color2) * value1 * value2
-      count++
+      const weight = getColorSimilarity(color1, color2)
+      sumSqr = (value1 - value2) ** 2
+      count += weight
     }
   }
 
-  return sum / count
+  return sumSqr / count
 }
 
 function groupImages({
@@ -242,19 +243,19 @@ export async function scanImages({
           .raw()
           .toBuffer()
 
-        const inPointContainer = quantizer.utils.PointContainer.fromImageData({
-          data      : new Uint8ClampedArray(data.buffer),
-          width,
-          height,
-          colorSpace: 'srgb',
-        })
-        const palette = await quantizer.buildPalette([inPointContainer], {
-          colorDistanceFormula: 'euclidean',
-          paletteQuantization : 'neuquant',
-          colors              : 32,
-        })
-        const outPointContainer = await quantizer.applyPalette(inPointContainer, palette)
-        data = outPointContainer.toUint8Array()
+        // const inPointContainer = quantizer.utils.PointContainer.fromImageData({
+        //   data      : new Uint8ClampedArray(data.buffer),
+        //   width,
+        //   height,
+        //   colorSpace: 'srgb',
+        // })
+        // const palette = await quantizer.buildPalette([inPointContainer], {
+        //   colorDistanceFormula: 'euclidean',
+        //   paletteQuantization : 'neuquant',
+        //   colors              : 32,
+        // })
+        // const outPointContainer = await quantizer.applyPalette(inPointContainer, palette)
+        // data = outPointContainer.toUint8Array()
 
         const image: Image = {
           data,
