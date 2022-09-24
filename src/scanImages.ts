@@ -7,8 +7,8 @@ import path from 'path'
 import * as quantizer from 'image-q'
 
 const IMAGE_SQUARE = 32 * 32
-const COLOR_COUNT_PER_CHANNEL = 16
-const MAX_DIFF = 0.00007
+const COLOR_COUNT = 32
+const MIN_SIMILARITY = 450
 
 const colorDiffMax = getColorDiff([0, 0, 0], [255, 255, 255])
 function getColorDiff(color1: Color, color2: Color) {
@@ -19,7 +19,7 @@ function getColorDiff(color1: Color, color2: Color) {
   )
 }
 function getColorSimilarity(color1: Color, color2: Color) {
-  return 1 - getColorDiff(color1, color2) / colorDiffMax
+  return 1 - (getColorDiff(color1, color2) + 1) / colorDiffMax
 }
 
 function calcColorStats({
@@ -29,58 +29,7 @@ function calcColorStats({
 }: Image): ColorStat[] {
   const colorStat = new Map<number, ColorStat>()
   const pixelCount = width * height
-
   const pixelData = new Uint32Array(data.buffer)
-
-  function addColorStat(color: Color) {
-    const [R, G, B] = color
-
-    const divR = Math.floor(R / stepColor)
-    const divG = Math.floor(G / stepColor)
-    const divB = Math.floor(B / stepColor)
-    const modR = (R % stepColor) / stepColor
-    const modG = (G % stepColor) / stepColor
-    const modB = (B % stepColor) / stepColor
-
-    const colorIndex = divR
-      + COLOR_COUNT_PER_CHANNEL * divG
-      + (COLOR_COUNT_PER_CHANNEL ** 2) * divB
-    //
-    // const item = colorStat.get(colorIndex)
-    // if (!item) {
-    //   colorStat.set(colorIndex, {
-    //     color: [divR * stepColor, divG * stepColor, divB * stepColor],
-    //     value: 1,
-    //   })
-    // }
-    // else {
-    //   item.value++
-    // }
-
-    for (let r = 0; r < 2; r++) {
-      const coefR = r === 0 ? 1 - modR : modR
-      for (let g = 0; g < 2; g++) {
-        const coefG = g === 0 ? 1 - modG : modG
-        for (let b = 0; b < 2; b++) {
-          const coefB = b === 0 ? 1 - modB : modB
-          const colorIndex = (divR + r)
-            + COLOR_COUNT_PER_CHANNEL * (divG + g)
-            + (COLOR_COUNT_PER_CHANNEL ** 2) * (divB + b)
-          const value = coefR * coefG * coefB // * coefX * coefY
-          const item = colorStat.get(colorIndex)
-          if (!item) {
-            colorStat.set(colorIndex, {
-              color: [(divR + r) * stepColor, (divG + g) * stepColor, (divB + b) * stepColor],
-              value,
-            })
-          }
-          else {
-            item.value += value
-          }
-        }
-      }
-    }
-  }
 
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
@@ -89,18 +38,17 @@ function calcColorStats({
       const item = colorStat.get(pixel)
       if (!item) {
         colorStat.set(pixel, {
-          color: new Uint8Array,
-          value,
+          color: new Uint8Array(data.buffer, index * 4, 4),
+          value: 1,
         })
       }
       else {
-        item.value += value
+        item.value++
       }
     }
   }
 
   const colorStatArr = Array.from(colorStat.values())
-  colorStatArr.length = Math.min(colorStatArr.length, 128)
 
   const coef = IMAGE_SQUARE / pixelCount
   for (let i = 0, len = colorStatArr.length; i < len; i++) {
@@ -110,31 +58,34 @@ function calcColorStats({
   return colorStatArr
 }
 
-function calcColorStatsDiff(stat1: ColorStat[], stat2: ColorStat[]): number {
-  let sumSqr: number = 0
+function calcColorStatsSimilarity(stat1: ColorStat[], stat2: ColorStat[]): number {
+  let sum: number = 0
   let count: number = 0
 
   const len1 = stat1.length
   const len2 = stat2.length
   for (let i1 = 0; i1 < len1; i1++) {
     const {color: color1, value: value1} = stat1[i1]
-    for (let i2 = i1; i2 < len2; i2++) {
+    for (let i2 = i1 + 1; i2 < len2; i2++) {
       const {color: color2, value: value2} = stat2[i2]
       const weight = getColorSimilarity(color1, color2)
-      sumSqr = (value1 - value2) ** 2
+      // const value = 1 / ((value1 - value2) ** 2 + 1)
+      sum += (value1 - value2) ** 2
       count += weight
     }
   }
 
-  return sumSqr / count
+  // const similarity = sum / count
+
+  return sum / count
 }
 
 function groupImages({
   imageFileStats,
-  maxDiff,
+  minSimilarity,
 }: {
   imageFileStats: ImageFileStat[],
-  maxDiff: number,
+  minSimilarity: number,
 }): ImageFileGroupItem[][] {
   imageFileStats = imageFileStats.slice()
   const groupRemaining: ImageFileGroupItem[] = []
@@ -143,28 +94,24 @@ function groupImages({
   for (let i = 0; i < imageFileStats.length; i++) {
     const imageFileStat1 = imageFileStats[i]
     let group: ImageFileGroupItem[]
-    let minDiff = 1
+    let maxSimilarity = 0
     for (let j = i + 1; j < imageFileStats.length; j++) {
       const imageFileStat2 = imageFileStats[j]
-      const diff = calcColorStatsDiff(
+      const similarity = calcColorStatsSimilarity(
         imageFileStat1.colorStats,
         imageFileStat2.colorStats,
       )
-      if (diff < minDiff) {
-        minDiff = diff
+      if (similarity > maxSimilarity) {
+        maxSimilarity = similarity
       }
-      if (diff <= maxDiff) {
+      if (similarity >= minSimilarity) {
         if (group == null) {
-          group = [{
-            file : imageFileStat1.file,
-            diff : 0,
-            image: imageFileStat1.image,
-          }]
+          group = []
         }
         group.push({
-          file : imageFileStat2.file,
-          diff,
-          image: imageFileStat2.image,
+          file      : imageFileStat2.file,
+          similarity: similarity,
+          image     : imageFileStat2.image,
         })
         imageFileStats[j] = imageFileStats[imageFileStats.length - 1]
         imageFileStats.length--
@@ -173,23 +120,28 @@ function groupImages({
     }
     if (group == null) {
       groupRemaining.push({
-        file : imageFileStat1.file,
-        diff : minDiff,
-        image: imageFileStat1.image,
+        file      : imageFileStat1.file,
+        similarity: maxSimilarity,
+        image     : imageFileStat1.image,
       })
     }
     else {
+      group.unshift({
+        file      : imageFileStat1.file,
+        similarity: maxSimilarity,
+        image     : imageFileStat1.image,
+      })
       groups.push(group)
     }
   }
 
   groups.push(groupRemaining)
 
-  groups.forEach(group => {
-    group.sort((o1, o2) => {
-      return o1.diff > o2.diff ? 1 : -1
-    })
-  })
+  // groups.forEach(group => {
+  //   group.sort((o1, o2) => {
+  //     return o1.similarity > o2.similarity ? -1 : 1
+  //   })
+  // })
 
   return groups
 }
@@ -241,19 +193,19 @@ export async function scanImages({
           .raw()
           .toBuffer()
 
-        // const inPointContainer = quantizer.utils.PointContainer.fromImageData({
-        //   data      : new Uint8ClampedArray(data.buffer),
-        //   width,
-        //   height,
-        //   colorSpace: 'srgb',
-        // })
-        // const palette = await quantizer.buildPalette([inPointContainer], {
-        //   colorDistanceFormula: 'euclidean',
-        //   paletteQuantization : 'neuquant',
-        //   colors              : 32,
-        // })
-        // const outPointContainer = await quantizer.applyPalette(inPointContainer, palette)
-        // data = outPointContainer.toUint8Array()
+        const inPointContainer = quantizer.utils.PointContainer.fromImageData({
+          data      : new Uint8ClampedArray(data.buffer),
+          width,
+          height,
+          colorSpace: 'srgb',
+        })
+        const palette = await quantizer.buildPalette([inPointContainer], {
+          colorDistanceFormula: 'euclidean',
+          paletteQuantization : 'neuquant',
+          colors              : COLOR_COUNT,
+        })
+        const outPointContainer = await quantizer.applyPalette(inPointContainer, palette)
+        data = outPointContainer.toUint8Array()
 
         const image: Image = {
           data,
@@ -286,7 +238,7 @@ export async function scanImages({
 
   const groups = groupImages({
     imageFileStats,
-    maxDiff: MAX_DIFF,
+    minSimilarity: MIN_SIMILARITY,
   })
 
   if (await fse.stat(destDir).catch(() => null)) {

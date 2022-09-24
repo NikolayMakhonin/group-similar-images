@@ -5,7 +5,7 @@ export type Image = {
   channels: number
 }
 
-export type Color = [R: number, G: number, B: number]
+export type Color = [R: number, G: number, B: number] | Uint8Array
 
 export type ColorStat = {
   color: Color,
@@ -20,6 +20,6 @@ export type ImageFileStat = {
 
 export type ImageFileGroupItem = {
   file: string,
-  diff: number,
+  similarity: number,
   image: Image,
 }
