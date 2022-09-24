@@ -8,7 +8,7 @@ import * as quantizer from 'image-q'
 
 const IMAGE_SQUARE = 32 * 32
 const COLOR_COUNT = 32
-const MIN_SIMILARITY = 450
+const MIN_SIMILARITY = 3000000
 
 const colorDiffMax = getColorDiff([0, 0, 0], [255, 255, 255])
 function getColorDiff(color1: Color, color2: Color) {
@@ -19,7 +19,7 @@ function getColorDiff(color1: Color, color2: Color) {
   )
 }
 function getColorSimilarity(color1: Color, color2: Color) {
-  return 1 - (getColorDiff(color1, color2) + 1) / colorDiffMax
+  return 1 - getColorDiff(color1, color2) / colorDiffMax
 }
 
 function calcColorStats({
@@ -69,8 +69,8 @@ function calcColorStatsSimilarity(stat1: ColorStat[], stat2: ColorStat[]): numbe
     for (let i2 = i1 + 1; i2 < len2; i2++) {
       const {color: color2, value: value2} = stat2[i2]
       const weight = getColorSimilarity(color1, color2)
-      // const value = 1 / ((value1 - value2) ** 2 + 1)
-      sum += (value1 - value2) ** 2
+      const value = 1 / ((value1 - value2) ** 2 + 1)
+      sum += ((value1 * value2) ** 2) * weight
       count += weight
     }
   }
@@ -137,13 +137,57 @@ function groupImages({
 
   groups.push(groupRemaining)
 
-  // groups.forEach(group => {
-  //   group.sort((o1, o2) => {
-  //     return o1.similarity > o2.similarity ? -1 : 1
-  //   })
-  // })
+  groups.forEach(group => {
+    group.sort((o1, o2) => {
+      return o1.similarity > o2.similarity ? -1 : 1
+    })
+  })
 
   return groups
+}
+
+function rgbToHsl(data: Uint8Array) {
+  for (let i = 0, len = data.length; i < len; i += 4) {
+    // from: https://stackoverflow.com/a/9493060/5221762
+    let r = data[i]
+    let g = data[i + 1]
+    let b = data[i + 2]
+
+    r /= 255
+    g /= 255
+    b /= 255
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    let h: number
+    let s: number
+    const l = (max + min) / 2
+
+    if (max === min) {
+      h = s = 0 // achromatic
+    }
+    else {
+      const d = max - min
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+      switch (max) {
+        case r:
+          h = (g - b) / d + (g < b ? 6 : 0)
+          break
+        case g:
+          h = (b - r) / d + 2
+          break
+        case b:
+          h = (r - g) / d + 4
+          break
+        default:
+          break
+      }
+      h /= 6
+    }
+
+    data[i] = Math.round(h * 255)
+    data[i + 1] = Math.round(s * 255)
+    data[i + 2] = Math.round(l * 255)
+  }
 }
 
 export async function scanImages({
@@ -214,7 +258,15 @@ export async function scanImages({
           height,
         }
 
-        const colorStats = calcColorStats(image)
+        const dataHsl = image.data //.slice()
+        // rgbToHsl(dataHsl)
+
+        const colorStats = calcColorStats({
+          data    : dataHsl,
+          width   : image.width,
+          height  : image.height,
+          channels: image.channels,
+        })
 
         readCount++
 
