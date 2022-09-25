@@ -8,18 +8,32 @@ import * as quantizer from 'image-q'
 
 const IMAGE_SQUARE = 32 * 32
 const COLOR_COUNT = 32
-const MIN_SIMILARITY = 3000000
+const MIN_SIMILARITY = 0.025
 
-const colorDiffMax = getColorDiff([0, 0, 0], [255, 255, 255])
-function getColorDiff(color1: Color, color2: Color) {
-  return Math.sqrt(
-    (color1[0] - color2[0]) ** 2
-    + (color1[1] - color2[1]) ** 2
-    + (color1[2] - color2[2]) ** 2,
-  )
+// function getColorDiff(color1: Color, color2: Color) {
+//   return Math.sqrt(
+//     (color1[0] - color2[0]) ** 2
+//     + (color1[1] - color2[1]) ** 2
+//     + (color1[2] - color2[2]) ** 2,
+//   )
+// }
+
+const colorDiffMax = _getColorDiff([0, 0, 0], [255, 255, 255])
+// from: https://www.compuphase.com/cmetric.htm
+// from: https://stackoverflow.com/a/9085524/5221762
+export function _getColorDiff(color1: Color, color2: Color) {
+  const rMean = (color1[0] + color2[0]) / 2
+  const r = color1[0] - color2[0]
+  const g = color1[1] - color2[1]
+  const b = color1[2] - color2[2]
+  return Math.sqrt((((512+rMean)*r*r)>>8) + 4*g*g + (((767-rMean)*b*b)>>8))
 }
-function getColorSimilarity(color1: Color, color2: Color) {
-  return 1 - getColorDiff(color1, color2) / colorDiffMax
+export function getColorDiff(color1: Color, color2: Color) {
+  return _getColorDiff(color1, color2) / colorDiffMax
+}
+
+export function getColorSimilarity(color1: Color, color2: Color) {
+  return 1 - getColorDiff(color1, color2)
 }
 
 function calcColorStats({
@@ -50,7 +64,7 @@ function calcColorStats({
 
   const colorStatArr = Array.from(colorStat.values())
 
-  const coef = IMAGE_SQUARE / pixelCount
+  const coef = 1 / pixelCount
   for (let i = 0, len = colorStatArr.length; i < len; i++) {
     colorStatArr[i].value *= coef
   }
@@ -58,7 +72,7 @@ function calcColorStats({
   return colorStatArr
 }
 
-function calcColorStatsSimilarity(stat1: ColorStat[], stat2: ColorStat[]): number {
+export function calcColorStatsSimilarity(stat1: ColorStat[], stat2: ColorStat[]): number {
   let sum: number = 0
   let count: number = 0
 
@@ -66,13 +80,22 @@ function calcColorStatsSimilarity(stat1: ColorStat[], stat2: ColorStat[]): numbe
   const len2 = stat2.length
   for (let i1 = 0; i1 < len1; i1++) {
     const {color: color1, value: value1} = stat1[i1]
-    for (let i2 = i1 + 1; i2 < len2; i2++) {
+    // let maxSimilarity = 0
+    // let maxValue2 = 0
+    for (let i2 = 0; i2 < len2; i2++) {
       const {color: color2, value: value2} = stat2[i2]
-      const weight = getColorSimilarity(color1, color2)
-      const value = 1 / ((value1 - value2) ** 2 + 1)
-      sum += ((value1 * value2) ** 2) * weight
-      count += weight
+      const similarity = getColorSimilarity(color1, color2) ** 3
+      // const value = 1 / ((value1 - value2) ** 2 + 1)
+      sum += (value1 + value2) * similarity
+      count += 1
+      // if (similarity > maxSimilarity) {
+      //   maxSimilarity = similarity
+      //   maxValue2 = value2
+      // }
     }
+    // const weight = 1
+    // count += weight
+    // sum += maxSimilarity * value1 * maxValue2 * weight
   }
 
   // const similarity = sum / count
@@ -146,7 +169,7 @@ function groupImages({
   return groups
 }
 
-function rgbToHsl(data: Uint8Array) {
+function rgbToHslBuffer(data: Uint8Array) {
   for (let i = 0, len = data.length; i < len; i += 4) {
     // from: https://stackoverflow.com/a/9493060/5221762
     let r = data[i]
@@ -188,6 +211,48 @@ function rgbToHsl(data: Uint8Array) {
     data[i + 1] = Math.round(s * 255)
     data[i + 2] = Math.round(l * 255)
   }
+
+  return data
+}
+
+function rgbToHsl(color: Uint8Array) {
+  // from: https://stackoverflow.com/a/9493060/5221762
+  let r = color[0]
+  let g = color[1]
+  let b = color[2]
+
+  r /= 255
+  g /= 255
+  b /= 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  let h: number
+  let s: number
+  const l = (max + min) / 2
+
+  if (max === min) {
+    h = s = 0 // achromatic
+  }
+  else {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0)
+        break
+      case g:
+        h = (b - r) / d + 2
+        break
+      case b:
+        h = (r - g) / d + 4
+        break
+      default:
+        break
+    }
+    h /= 6
+  }
+
+  return [h, s, l]
 }
 
 export async function scanImages({
@@ -222,7 +287,7 @@ export async function scanImages({
           .resize(width, height, {
             kernel: 'lanczos3',
           })
-          .toColorspace('srgb')
+          .toColorspace('lab2xyz')
           .ensureAlpha()
           // docs: https://sharp.pixelplumbing.com/api-output#png
           // .png({
@@ -259,7 +324,7 @@ export async function scanImages({
         }
 
         const dataHsl = image.data //.slice()
-        // rgbToHsl(dataHsl)
+        // rgbToHslBuffer(dataHsl)
 
         const colorStats = calcColorStats({
           data    : dataHsl,
@@ -322,6 +387,30 @@ export async function scanImages({
           destFile = path.join(dir, `${name}-${i}${ext}`)
         }
         files.add(destFile)
+
+        const indexes = Array.from({length: image.data.length / 4}, (_, i) => i)
+        const hslData = rgbToHslBuffer(image.data.slice())
+        indexes.sort((i1, i2) => {
+          const c1 = new Uint8Array(hslData.buffer, i1 * 4, 4)
+          const c2 = new Uint8Array(hslData.buffer, i2 * 4, 4)
+          if (c1[2] !== c2[2]) {
+            return c1[2] > c2[2] ? 1 : -1
+          }
+          if (c1[0] !== c2[0]) {
+            return c1[0] > c2[0] ? 1 : -1
+          }
+          if (c1[1] !== c2[1]) {
+            return c1[1] > c2[1] ? 1 : -1
+          }
+          return 0
+        })
+        const sortedData = new Uint8Array(image.data.length)
+        indexes.forEach((indexOld, indexNew) => {
+          for (let j = 0; j < 4; j++) {
+            sortedData[indexNew * 4 + j] = image.data[indexOld * 4 + j]
+          }
+        })
+        image.data = sortedData
 
         // await fse.copyFile(file, destFile)
         await sharp(image.data, {
